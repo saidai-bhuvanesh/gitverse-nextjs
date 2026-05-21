@@ -434,6 +434,6 @@ This project is licensed under the MIT License.
 - NeonDB for serverless PostgreSQL
 - All contributors and users of GitVerse
 
----
+
 
 Made with ❤️ by the GitVerse Team
