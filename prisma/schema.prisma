@@ -132,6 +132,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId, provider])
   @@map("accounts")
 }
 
@@ -142,6 +143,7 @@ model Session {
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("sessions")
 }
 
@@ -237,6 +239,7 @@ model Branch {
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
   @@unique([repositoryId, name])
+  @@index([repositoryId])
   @@map("branches")
 }
 
@@ -319,6 +322,7 @@ model Contributor {
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
   @@unique([repositoryId, email])
+  @@index([repositoryId])
   @@map("contributors")
 }
 
@@ -334,5 +338,6 @@ model Language {
   createdAt    DateTime   @default(now()) @map("created_at")
 
   @@unique([repositoryId, name])
+  @@index([repositoryId])
   @@map("languages")
 }
