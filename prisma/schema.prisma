@@ -78,7 +78,6 @@ model GitHubRepo {
   @@index([installationId])
   @@index([enabled])
   @@index([updatedAt])
-  @@index([repoFullName, enabled])
   @@map("github_repos")
 }
 
@@ -135,7 +134,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
-  @@index([userId, provider])
+  @@index([userId])
   @@map("accounts")
 }
 
@@ -147,6 +146,7 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expires])
   @@map("sessions")
 }
 
@@ -186,7 +186,6 @@ model Repository {
   analysisJobs   AnalysisJob[]
 
   @@index([userId])
-  @@index([userId, url])
   @@map("repositories")
 }
 
@@ -225,8 +224,7 @@ model AnalysisJob {
   @@index([lockExpiresAt])
   @@index([repositoryId])
   @@index([userId])
-  @@index([repositoryId, userId, createdAt])
-  @@index([userId, status])
+  @@index([status, lockExpiresAt, nextRunAt])
   @@map("analysis_jobs")
 }
 
@@ -243,7 +241,6 @@ model Branch {
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
   @@unique([repositoryId, name])
-  @@index([repositoryId])
   @@map("branches")
 }
 
@@ -306,6 +303,7 @@ model FileChange {
   file      File?    @relation(fields: [fileId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([commitId])
   @@map("file_changes")
 }
 
@@ -326,7 +324,6 @@ model Contributor {
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
   @@unique([repositoryId, email])
-  @@index([repositoryId])
   @@map("contributors")
 }
 
@@ -342,6 +339,5 @@ model Language {
   createdAt    DateTime   @default(now()) @map("created_at")
 
   @@unique([repositoryId, name])
-  @@index([repositoryId])
   @@map("languages")
 }
