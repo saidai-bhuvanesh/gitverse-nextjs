@@ -290,9 +290,22 @@ export default function Dashboard() {
                   Loading repositories...
                 </div>
               ) : recentRepositories.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No repositories yet. Add your first repository above!
-                </div>
+                <div className="text-center py-12 flex flex-col items-center gap-4">
+  <GitBranch className="h-12 w-12 text-muted-foreground/50" />
+  <div>
+    <h3 className="font-semibold text-lg">No repositories yet</h3>
+    <p className="text-sm text-muted-foreground mt-1">
+      Import your first repository to get started
+    </p>
+  </div>
+  <Button
+    onClick={() => router.push('/contribute')}
+    className="mt-2"
+  >
+    <Plus className="h-4 w-4 mr-2" />
+    Add Repository
+  </Button>
+</div>
               ) : (
                 <div className="space-y-3">
                   {recentRepositories.map((repo) => (
