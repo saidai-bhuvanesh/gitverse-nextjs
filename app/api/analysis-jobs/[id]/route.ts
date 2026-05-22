@@ -3,6 +3,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, isHttpError } from "@/lib/api-auth";
 import { analysisJobService } from "@/lib/services/analysisJobService";
 
+const lastKickAtByJobId = new Map<string, number>();
+
+function kickLocalRunner(request: NextRequest, jobId: string) {
+  if (process.env.NODE_ENV === "production") return;
+
+  const now = Date.now();
+  const lastKickAt = lastKickAtByJobId.get(jobId) ?? 0;
+  if (now - lastKickAt < 5000) return; // throttle (best-effort)
+  lastKickAtByJobId.set(jobId, now);
+
+  const origin = new URL(request.url).origin;
+  const secret = process.env.ANALYSIS_RUNNER_SECRET;
+  void fetch(`${origin}/api/internal/run-analysis`, {
+    method: "POST",
+    headers: secret ? { "x-analysis-runner-secret": secret } : undefined,
+  }).catch(() => {
+    // Best-effort only.
+  });
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -30,6 +50,10 @@ export async function GET(
 
     const details = job.progressDetails as { retryAfter?: number; rateLimited?: boolean } | null;
     const retryAfter = details?.retryAfter ?? null;
+
+    if (job.status === "QUEUED") {
+      kickLocalRunner(request, job.id);
+    }
 
     return NextResponse.json({
       job: {

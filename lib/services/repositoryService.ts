@@ -235,9 +235,13 @@ export class RepositoryService {
       await tracker.update(5, `Cloning repository ${repository.url}`);
       gitService = await GitService.cloneRepository(repository.url, tempDir);
 
-      // Capture README early (best-effort)
+      // Capture README / size / branches in parallel; these are independent once cloned.
       await tracker.update(8, "Reading README");
-      const readme = await this.tryReadmeFromRepoPath(tempDir);
+      const readmePromise = this.tryReadmeFromRepoPath(tempDir);
+      const sizePromise = gitService.getRepositorySize();
+      const branchesPromise = gitService.getBranches();
+
+      const readme = await readmePromise;
       await prisma.repository.update({
         where: { id: repositoryId },
         data: {
@@ -247,13 +251,15 @@ export class RepositoryService {
         },
       });
 
-      // Get repository size
+      // Get repository size and branches.
       await tracker.update(10, "Calculating size");
-      const size = await gitService.getRepositorySize();
+      const [size, branches] = await Promise.all([
+        sizePromise,
+        branchesPromise,
+      ]);
 
       // Analyze branches
       await tracker.update(15, "Analyzing branches");
-      const branches = await gitService.getBranches();
       const defaultBranch = branches.find((b) => b.isDefault)?.name || "main";
 
       await prisma.branch.createMany({
@@ -300,17 +306,21 @@ export class RepositoryService {
       let insertedCount = 0;
       let failedCount = 0;
 
-      const totalNewCommits = newCommits.length;
+      const totalNewCommits = Math.max(1, newCommits.length);
       let lastCommitProgressUpdateAt = Date.now();
 
-      if (totalNewCommits === 0) {
+      if (newCommits.length === 0) {
         await tracker.update(60, "Storing commits (Up to date)");
       }
 
-      for (const commit of newCommits) {
+      const commitChunkSize = 100;
+
+      for (let i = 0; i < newCommits.length; i += commitChunkSize) {
+        const chunk = newCommits.slice(i, i + commitChunkSize);
+
         try {
-          const createdCommit = await prisma.commit.create({
-            data: {
+          const inserted = await prisma.commit.createMany({
+            data: chunk.map((commit) => ({
               hash: commit.hash,
               shortHash: commit.shortHash,
               message: commit.message,
@@ -326,43 +336,58 @@ export class RepositoryService {
               deletions: commit.deletions,
               filesChanged: commit.filesChanged,
               repositoryId,
-            },
+            })),
+            skipDuplicates: true,
           });
 
-          insertedCount++;
+          insertedCount += inserted.count;
 
-          // Periodically report progress (every ~2s)
-          if (Date.now() - lastCommitProgressUpdateAt > 2000) {
-            await tracker.progressSubTask(25, 60, insertedCount, totalNewCommits, `Storing commits (${insertedCount}/${totalNewCommits})`);
-            lastCommitProgressUpdateAt = Date.now();
-          }
+          const insertedCommits =
+            chunk.length > 0
+              ? await prisma.commit.findMany({
+                  where: {
+                    repositoryId,
+                    hash: { in: chunk.map((commit) => commit.hash) },
+                  },
+                  select: { id: true, hash: true },
+                })
+              : [];
+          const commitIdByHash = new Map(
+            insertedCommits.map((commit) => [commit.hash, commit.id]),
+          );
 
-          // Store file changes
-          if (commit.fileChanges.length > 0) {
+          const fileChanges = chunk.flatMap((commit) => {
+            const commitId = commitIdByHash.get(commit.hash);
+            if (!commitId || commit.fileChanges.length === 0) return [];
+
+            return commit.fileChanges.map((change) => ({
+              path: change.path,
+              additions: change.additions,
+              deletions: change.deletions,
+              changeType: change.changeType,
+              commitId,
+            }));
+          });
+
+          if (fileChanges.length > 0) {
             await prisma.fileChange.createMany({
-              data: commit.fileChanges.map((change) => ({
-                path: change.path,
-                additions: change.additions,
-                deletions: change.deletions,
-                changeType: change.changeType,
-                commitId: createdCommit.id,
-              })),
+              data: fileChanges,
               skipDuplicates: true,
             });
           }
+
+          // Periodically report progress (every ~2s)
+          if (Date.now() - lastCommitProgressUpdateAt > 2000) {
+            await tracker.progressSubTask(25, 60, i + chunk.length, totalNewCommits, `Storing commits (${i + chunk.length}/${newCommits.length})`);
+            lastCommitProgressUpdateAt = Date.now();
+          }
         } catch (error: any) {
-          failedCount++;
-          console.error(
-            `Failed to insert commit ${commit.hash}:`,
-            error.message,
-          );
-          // Continue with next commit
+          failedCount += chunk.length;
+          console.error(`Failed to insert commit chunk starting at ${i}:`, error.message);
         }
       }
 
-      console.log(
-        `Commit insertion complete: ${insertedCount} inserted, ${failedCount} failed`,
-      );
+      console.log(`Commit insertion complete: ${insertedCount} inserted, ${failedCount} failed`);
 
       // Analyze files
       await tracker.update(65, "Scanning files");
@@ -397,41 +422,17 @@ export class RepositoryService {
         await tracker.update(75, "Storing files (Skipped - no files found)");
       }
 
-      // Analyze contributors
+      // Analyze contributors and languages in parallel; both are independent after file scan.
       await tracker.update(80, "Analyzing contributors");
-      const contributors = await gitService.getContributors();
-      const totalContributions = contributors.reduce(
-        (sum, c) => sum + c.commits,
-        0,
-      );
+      const contributorsPromise = gitService.getContributors();
 
-      if (contributors.length > 0) {
-        await prisma.contributor.createMany({
-          data: contributors.map((contributor) => {
-            const percentage =
-              totalContributions > 0
-                ? (contributor.commits / totalContributions) * 100
-                : 0;
-            return {
-              name: contributor.name,
-              email: contributor.email,
-              commits: contributor.commits,
-              additions: contributor.additions,
-              deletions: contributor.deletions,
-              percentage,
-              firstCommit: contributor.firstCommit,
-              lastCommit: contributor.lastCommit,
-              repositoryId,
-            };
-          }),
-          skipDuplicates: true,
-        });
-      }
+      console.log(`Detecting languages for repository ${repositoryId}`);
+      const languagesPromise = gitService.detectLanguages();
 
-      // Detect languages
-      await tracker.update(90, "Detecting languages");
-      const languages = await gitService.detectLanguages();
-
+      const [contributors, languages] = await Promise.all([
+        contributorsPromise,
+        languagesPromise,
+      ]);
       // Languages to ignore (config/data formats, not actual code)
       const ignoredLanguages = ["JSON", "YAML", "Markdown", "TOML", "CSV"];
 

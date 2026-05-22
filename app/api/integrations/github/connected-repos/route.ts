@@ -4,6 +4,8 @@ import prisma from "@/lib/prisma";
 import { sanitizeErrorMessage } from "@/lib/utils/rateLimit";
 import { toJsonSafe } from "@/lib/utils/jsonSafe";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request);

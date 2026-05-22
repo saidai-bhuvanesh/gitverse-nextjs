@@ -4,6 +4,8 @@ import prisma from "@/lib/prisma";
 import { toJsonSafe } from "@/lib/utils/jsonSafe";
 import { isValidRepositoryIdentifier } from "@/lib/utils/validators";
 
+export const dynamic = "force-dynamic";
+
 function clampInt(
   value: string | null,
   fallback: number,
