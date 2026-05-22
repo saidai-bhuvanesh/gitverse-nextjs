@@ -81,7 +81,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const file = repository.files.find((f) => f.path === filePath);
+    const normalizedFilePath = filePath.trim();
+    const file = repository.files.find((f) => f.path === normalizedFilePath);
 
     if (!file) {
       return NextResponse.json(

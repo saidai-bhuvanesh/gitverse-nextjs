@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth(request);
 
     console.log("[RunAnalysis] Started", {
-      userId: user.userId,
+      user: "authenticated",
       repositoryId: parsedRepositoryId,
       type,
     });

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { isHttpError, requireAuth } from "@/lib/middleware";
 import { getGeminiService } from "@/lib/services/geminiService";
 
+const MAX_FILES_PER_LIST = 500;
+const MAX_DIFF_CHARS = 100_000;
+
 export async function POST(request: NextRequest) {
   try {
     let body;
@@ -51,6 +54,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "diff must be a string" },
         { status: 400 }
+      );
+    }
+
+    // Payload size guards — must run before auth and Gemini calls
+    if (Array.isArray(added) && added.length > MAX_FILES_PER_LIST) {
+      return NextResponse.json(
+        { error: `added must contain at most ${MAX_FILES_PER_LIST} entries` },
+        { status: 413 }
+      );
+    }
+
+    if (Array.isArray(modified) && modified.length > MAX_FILES_PER_LIST) {
+      return NextResponse.json(
+        { error: `modified must contain at most ${MAX_FILES_PER_LIST} entries` },
+        { status: 413 }
+      );
+    }
+
+    if (Array.isArray(deleted) && deleted.length > MAX_FILES_PER_LIST) {
+      return NextResponse.json(
+        { error: `deleted must contain at most ${MAX_FILES_PER_LIST} entries` },
+        { status: 413 }
+      );
+    }
+
+    if (typeof diff === "string" && diff.length > MAX_DIFF_CHARS) {
+      return NextResponse.json(
+        { error: `diff must not exceed ${MAX_DIFF_CHARS} characters` },
+        { status: 413 }
       );
     }
 
