@@ -36,11 +36,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { repositoryId, filePath } = body || {};
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "Invalid request payload: body must be a JSON object" },
+        { status: 400 }
+      );
+    }
 
-    if (!repositoryId || !filePath) {
+    const { repositoryId, filePath } = body;
+
+    if (repositoryId === undefined || repositoryId === null || filePath === undefined || filePath === null) {
       return NextResponse.json(
         { error: "Repository ID and file path are required" },
+        { status: 400 }
+      );
+    }
+
+    const parsedRepositoryId = Number(repositoryId);
+    if (!Number.isInteger(parsedRepositoryId) || parsedRepositoryId <= 0) {
+      return NextResponse.json(
+        { error: "Repository ID must be a positive integer" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      return NextResponse.json(
+        { error: "File path must be a non-empty string" },
         { status: 400 }
       );
     }
@@ -48,7 +70,7 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth(request);
 
     const repository = (await repositoryService.getRepository(
-      repositoryId,
+      parsedRepositoryId,
       user.userId
     )) as Repository;
 

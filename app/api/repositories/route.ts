@@ -116,10 +116,16 @@ export async function POST(request: NextRequest) {
 
     const user = await requireAuth(request);
 
+    let host = "";
+    try {
+      host = new URL(trimmedUrl).host;
+    } catch {
+      // Fallback in case of parse error
+    }
+
     console.log("Create repository request:", {
-      name,
-      url,
-      userId: user.userId,
+      name: trimmedName,
+      host,
     });
 
     const repository = await repositoryService.createRepository({

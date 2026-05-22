@@ -17,11 +17,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { repositoryId, type } = body || {};
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "Invalid request payload: body must be a JSON object" },
+        { status: 400 }
+      );
+    }
 
-    if (!repositoryId || !type) {
+    const { repositoryId, type } = body;
+
+    if (repositoryId === undefined || repositoryId === null || type === undefined || type === null) {
       return NextResponse.json(
         { error: "Repository ID and analysis type are required" },
+        { status: 400 }
+      );
+    }
+
+    const parsedRepositoryId = Number(repositoryId);
+    if (!Number.isInteger(parsedRepositoryId) || parsedRepositoryId <= 0) {
+      return NextResponse.json(
+        { error: "Repository ID must be a positive integer" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof type !== "string" || !type.trim()) {
+      return NextResponse.json(
+        { error: "Analysis type must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+
+    const validAnalysisTypes = ["overview", "code-quality", "security", "architecture", "suggestions"];
+    if (!validAnalysisTypes.includes(type)) {
+      return NextResponse.json(
+        { error: "Analysis type must be one of: overview, code-quality, security, architecture, suggestions" },
         { status: 400 }
       );
     }
@@ -30,12 +60,12 @@ export async function POST(request: NextRequest) {
 
     console.log("[RunAnalysis] Started", {
       userId: user.userId,
-      repositoryId,
+      repositoryId: parsedRepositoryId,
       type,
     });
 
     const repository = await repositoryService.getRepository(
-      repositoryId,
+      parsedRepositoryId,
       user.userId
     );
 
@@ -73,8 +103,8 @@ export async function POST(request: NextRequest) {
 
     // Timeout safety for Vercel (important improvement)
     const analysisPromise = getGeminiService().analyzeRepository({
-      repositoryId,
-      type,
+      repositoryId: parsedRepositoryId,
+      type: type as "overview" | "code-quality" | "security" | "architecture" | "suggestions",
       context,
     });
 
@@ -90,7 +120,7 @@ export async function POST(request: NextRequest) {
     const duration = Date.now() - startTime;
 
     console.log("[RunAnalysis] Completed", {
-      repositoryId,
+      repositoryId: parsedRepositoryId,
       duration: `${duration}ms`,
     });
 

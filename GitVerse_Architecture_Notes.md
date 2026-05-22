@@ -8,7 +8,7 @@ This document provides a technical walkthrough of the GitVerse codebase, capturi
 
 The project has been migrated from a Vite-based single-page application to a Next.js 14 App Router codebase.
 
-```
+```text
 gitverse-nextjs/
 ├── app/                      # Next.js App Router (Pages & API routes)
 │   ├── api/                  # Backend endpoints (Auth, AI, Repositories)
@@ -53,8 +53,8 @@ graph TD
     J -->|D3 Force Layout| K[Interactive SVG Visualization]
 ```
 
-1. **Import Route**: [app/api/repositories/route.ts](file:///d:/GitVerse/app/api/repositories/route.ts) receives the POST request, creates a `Repository` record with `"pending"` status, and creates an `AnalysisJob`.
-2. **Analysis execution**: [lib/services/repositoryService.ts](file:///d:/GitVerse/lib/services/repositoryService.ts) clones the repository into a temporary OS folder, parses metadata, extracts the README, gets branches, fetches commits up to 1000 entries, scans files, detects languages, and computes contributor percentages. All these are written to PostgreSQL.
+1. **Import Route**: [app/api/repositories/route.ts](app/api/repositories/route.ts) receives the POST request, creates a `Repository` record with `"pending"` status, and creates an `AnalysisJob`.
+2. **Analysis execution**: [lib/services/repositoryService.ts](lib/services/repositoryService.ts) clones the repository into a temporary OS folder, parses metadata, extracts the README, gets branches, fetches commits up to 1000 entries, scans files, detects languages, and computes contributor percentages. All these are written to PostgreSQL.
 3. **API endpoint**: The frontend queries the database and fetches the repository record with its included relations: `branches`, `commits`, `contributors`, `languages`, and the first 500 `files`.
 4. **Rendering**: The `CodeDependencyGraph` component processes the files to construct folder and file nodes, laying them out dynamically via D3's force-directed simulator.
 
@@ -62,7 +62,7 @@ graph TD
 
 ## 3. Database Schema Overview
 
-The database uses PostgreSQL via Prisma. Key models and relationships defined in [schema.prisma](file:///d:/GitVerse/prisma/schema.prisma) include:
+The database uses PostgreSQL via Prisma. Key models and relationships defined in [schema.prisma](prisma/schema.prisma) include:
 
 - **User**: Core profile containing authentication data, connected accounts, and weekly configurations.
 - **Repository**: Individual repository containing size, description, stars, forks, default branch, status (`pending`, `analyzing`, `completed`, `failed`), and relationships.
@@ -77,7 +77,7 @@ The database uses PostgreSQL via Prisma. Key models and relationships defined in
 
 ## 4. D3 Visualization Engine Details
 
-The repository's core interactive visualization is rendered inside [CodeDependencyGraph.tsx](file:///d:/GitVerse/src/components/visualizations/CodeDependencyGraph.tsx):
+The repository's core interactive visualization is rendered inside [CodeDependencyGraph.tsx](src/components/visualizations/CodeDependencyGraph.tsx):
 
 - **Graph Structure Construction**:
   - Folders are extracted from file paths (e.g. `src/components/button.tsx` yields folder nodes for `src` and `src/components`).

@@ -58,10 +58,13 @@ export async function getAuthUser(
   const authHeader = request.headers.get("authorization");
 
   // 1) Existing JWT auth (Authorization: Bearer ...)
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) return payload;
+  if (authHeader) {
+    const match = authHeader.match(/^bearer\s+(.+)$/i);
+    if (match) {
+      const token = match[1].trim();
+      const payload = verifyToken(token);
+      if (payload) return payload;
+    }
   }
 
   // 2) NextAuth session cookie (Google OAuth)

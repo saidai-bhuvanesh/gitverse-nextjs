@@ -802,31 +802,61 @@ export function CodeDependencyGraph({ repository }: CodeDependencyGraphProps) {
     node.on("mouseenter", function (event: any, d: any) {
       if (tooltipRef.current) {
         const tooltip = d3.select(tooltipRef.current);
-        const folderInfo = d.type === "folder" 
-          ? `<div class="text-xs text-slate-400">Total lines: <strong>${d.lines?.toLocaleString()}</strong></div>
-             <div class="text-xs text-slate-400">Contains: <strong>${d.childCount} files</strong></div>`
-          : `<div class="text-xs text-slate-400">Lines: <strong>${d.lines?.toLocaleString()}</strong></div>
-             <div class="text-xs text-slate-400">Language: <span class="px-1.5 py-0.5 rounded text-[10px] bg-blue-950 border border-blue-800 text-blue-300 uppercase">${d.language}</span></div>`;
+        tooltip.selectAll("*").remove(); // Clear previous contents
 
-        const layerText = `<span class="px-1.5 py-0.5 rounded text-[9px] bg-slate-900 border border-slate-800 text-indigo-400 font-mono uppercase">${d.layer}</span>`;
-        const criticalText = d.isCritical ? `<span class="flex items-center gap-1 text-[10px] text-amber-400 font-semibold mt-1"><ShieldAlert className="w-3.5 h-3.5" /> Core System Hub</span>` : "";
+        const wrapper = tooltip.append("div").attr("class", "space-y-1");
+
+        // Header containing dot, name, and layer badge
+        const header = wrapper.append("div").attr("class", "flex items-center gap-1.5 font-semibold text-sm");
+        
+        header.append("span")
+          .attr("class", `w-2.5 h-2.5 rounded-full ${d.type === 'folder' ? 'bg-purple-500' : 'bg-cyan-500'}`);
+        
+        header.append("span")
+          .text(d.name);
+
+        header.append("span")
+          .attr("class", "px-1.5 py-0.5 rounded text-[9px] bg-slate-900 border border-slate-800 text-indigo-400 font-mono uppercase")
+          .text(d.layer);
+
+        // Path
+        wrapper.append("div")
+          .attr("class", "text-[10px] text-slate-500 truncate max-w-xs")
+          .text(d.path);
+
+        // Folder or File Info
+        if (d.type === "folder") {
+          const linesDiv = wrapper.append("div").attr("class", "text-xs text-slate-400");
+          linesDiv.append("span").text("Total lines: ");
+          linesDiv.append("strong").text((d.lines || 0).toLocaleString());
+
+          const filesDiv = wrapper.append("div").attr("class", "text-xs text-slate-400");
+          filesDiv.append("span").text("Contains: ");
+          filesDiv.append("strong").text(`${d.childCount} files`);
+        } else {
+          const linesDiv = wrapper.append("div").attr("class", "text-xs text-slate-400");
+          linesDiv.append("span").text("Lines: ");
+          linesDiv.append("strong").text((d.lines || 0).toLocaleString());
+
+          const langDiv = wrapper.append("div").attr("class", "text-xs text-slate-400");
+          langDiv.append("span").text("Language: ");
+          langDiv.append("span")
+            .attr("class", "px-1.5 py-0.5 rounded text-[10px] bg-blue-950 border border-blue-800 text-blue-300 uppercase")
+            .text(d.language || "");
+        }
+
+        // Critical Hub
+        if (d.isCritical) {
+          const critDiv = wrapper.append("span")
+            .attr("class", "flex items-center gap-1 text-[10px] text-amber-400 font-semibold mt-1");
+          critDiv.append("span").text("⚠️ Core System Hub");
+        }
 
         tooltip
           .style("opacity", "1")
           .style("display", "block")
           .style("left", `${event.clientX + 15}px`)
-          .style("top", `${event.clientY - 20}px`).html(`
-            <div class="space-y-1">
-              <div class="flex items-center gap-1.5 font-semibold text-sm">
-                <span class="w-2.5 h-2.5 rounded-full ${d.type === 'folder' ? 'bg-purple-500' : 'bg-cyan-500'}"></span>
-                <span>${d.name}</span>
-                ${layerText}
-              </div>
-              <div class="text-[10px] text-slate-500 truncate max-w-xs">${d.path}</div>
-              ${folderInfo}
-              ${criticalText}
-            </div>
-          `);
+          .style("top", `${event.clientY - 20}px`);
       }
 
       if (focusedNodeRef.current || tourIndexRef.current !== null) return;
@@ -1169,8 +1199,18 @@ export function CodeDependencyGraph({ repository }: CodeDependencyGraphProps) {
     const height = 600;
 
     // Calculate cluster centroid
-    const avgX = d3.mean(matchingNodes, (n: any) => n.x) || width / 2;
-    const avgY = d3.mean(matchingNodes, (n: any) => n.y) || height / 2;
+    const liveNodes = simulationRef.current ? simulationRef.current.nodes() : [];
+    const liveNodesMap = new Map<string, any>(liveNodes.map((n: any) => [n.id, n]));
+
+    const avgX = d3.mean(matchingNodes, (n: any) => {
+      const live = liveNodesMap.get(n.id);
+      return live ? live.x : n.x;
+    }) || width / 2;
+
+    const avgY = d3.mean(matchingNodes, (n: any) => {
+      const live = liveNodesMap.get(n.id);
+      return live ? live.y : n.y;
+    }) || height / 2;
 
     // Dim other layer elements
     const matchingNodeIds = new Set(matchingNodes.map(n => n.id));
@@ -1198,10 +1238,10 @@ export function CodeDependencyGraph({ repository }: CodeDependencyGraphProps) {
   const searchSuggestions = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const query = searchQuery.toLowerCase();
-    return graphData.nodes
+    return filteredData.nodes
       .filter(n => n.name.toLowerCase().includes(query) || n.path.toLowerCase().includes(query))
       .slice(0, 5);
-  }, [searchQuery, graphData]);
+  }, [searchQuery, filteredData]);
 
   // Layer Checkbox Handler
   const toggleLayer = useCallback((layer: string) => {
@@ -1361,9 +1401,10 @@ export function CodeDependencyGraph({ repository }: CodeDependencyGraphProps) {
 
   // AI Insights metadata aggregators
   const aiStats = useMemo(() => {
-    const totalFiles = graphData.nodes.filter(n => n.type === "file").length;
+    const allFiles = repository?.files || [];
+    const totalFiles = allFiles.length;
     const totalFolders = graphData.nodes.filter(n => n.type === "folder").length;
-    const totalLines = graphData.nodes.reduce((acc, n) => acc + (n.type === "file" ? (n.lines || 0) : 0), 0);
+    const totalLines = allFiles.reduce((acc: number, f: any) => acc + (f.lines || 0), 0);
     
     // Sort critical hub files
     const criticalHubs = graphData.nodes
@@ -1399,7 +1440,7 @@ export function CodeDependencyGraph({ repository }: CodeDependencyGraphProps) {
       criticalHubs,
       recommendations
     };
-  }, [graphData]);
+  }, [graphData, repository]);
 
   return (
     <Card className="glass relative p-4 sm:p-6 overflow-hidden border-slate-800 bg-slate-950/80">
@@ -1880,7 +1921,7 @@ export function CodeDependencyGraph({ repository }: CodeDependencyGraphProps) {
                         {aiStats.totalLines.toLocaleString()} lines / {aiStats.totalFiles} modules
                       </div>
                       <p className="text-[10px] text-slate-500 mt-1">
-                        Scale categorized as <strong>Medium</strong>. Modular layering decouples UI views and business logic components.
+                        Scale categorized as <strong>Medium</strong>. Metrics reflect the entire repository (visualization displays top 30 files for rendering efficiency).
                       </p>
                     </div>
 
