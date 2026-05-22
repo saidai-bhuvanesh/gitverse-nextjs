@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, isHttpError } from "@/lib/middleware";
+import { requireAuth, isHttpError } from "@/lib/api-auth";
 import {
   parsePullRequestUrl,
   reviewPullRequest,

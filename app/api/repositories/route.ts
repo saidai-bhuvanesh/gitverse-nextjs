@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isHttpError, requireAuth } from "@/lib/middleware";
+import { isHttpError, requireAuth } from "@/lib/api-auth";
 import { repositoryService } from "@/lib/services/repositoryService";
 import { analysisJobService } from "@/lib/services/analysisJobService";
 
@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { name, url, description } = body;
+
 
     if (name === undefined || name === null) {
       return NextResponse.json(
@@ -154,10 +155,7 @@ export async function POST(request: NextRequest) {
         { status: error.status }
       );
     }
-    return NextResponse.json(
-      { error: "Failed to create repository" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
 
@@ -168,16 +166,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ repositories });
   } catch (error: any) {
-    console.error("List repositories error:", error);
+    console.error("List repositories error:", error instanceof Error ? error.message : "Unknown error");
     if (isHttpError(error)) {
       return NextResponse.json(
         { error: error.message },
         { status: error.status }
       );
     }
-    return NextResponse.json(
-      { error: "Failed to list repositories" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

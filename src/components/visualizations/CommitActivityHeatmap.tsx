@@ -57,8 +57,7 @@ export function CommitActivityHeatmap({
     date: string;
     count: number;
   } | null>(null);
-
-
+  const hasCommits = Boolean(repository?.commits && repository.commits.length > 0);
 
   useEffect(() => {
     // Advance the window automatically as time passes (refresh at next local midnight).
@@ -79,7 +78,7 @@ export function CommitActivityHeatmap({
   }, []);
 
   useEffect(() => {
-    if (!repository?.commits || repository.commits.length === 0 || !svgRef.current) return;
+    if (!svgRef.current || !hasCommits) return;
 
     const data = generateCommitData(repository.commits, now);
     const svg = d3.select(svgRef.current);
@@ -331,7 +330,7 @@ export function CommitActivityHeatmap({
       .attr("fill", "currentColor")
       .attr("font-size", "10px")
       .text("More");
-  }, [repository, now]);
+  }, [repository, now, hasCommits]);
 
   const getCommitsForDate = (date: string) => {
     return (
@@ -348,7 +347,7 @@ export function CommitActivityHeatmap({
     ? getCommitsForDate(selectedDate.date)
     : [];
 
-  if (!repository?.commits || repository.commits.length === 0) {
+  if (!hasCommits) {
     return (
       <Card className="glass p-4 sm:p-6 flex min-h-[350px] w-full flex-col items-center justify-center rounded-xl border border-dashed border-border/60 text-center">
         <div className="w-full text-left mb-4">

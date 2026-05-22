@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isHttpError, requireAuth } from "@/lib/middleware";
+import { isHttpError, requireAuth } from "@/lib/api-auth";
 import { getGeminiService } from "@/lib/services/geminiService";
 
 const MAX_FILES_PER_LIST = 500;
@@ -117,9 +117,6 @@ export async function POST(request: NextRequest) {
         { status: error.status }
       );
     }
-    return NextResponse.json(
-      { error: "Failed to generate suggestions" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
