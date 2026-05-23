@@ -37,6 +37,7 @@ export default function AccountDeletedPage() {
             <li>Sessions and authentication tokens</li>
             <li>GitHub and OAuth integrations</li>
             <li>Analysis jobs and history</li>
+            <li>Password reset tokens</li>
           </ul>
         </div>
 
