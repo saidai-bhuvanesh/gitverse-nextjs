@@ -59,6 +59,12 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("PR review error:", sanitizeError(error));
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: "Malformed JSON body" },
+        { status: 400 },
+      );
+    }
     if (isHttpError(error)) {
       return NextResponse.json(
         { error: error.message },
