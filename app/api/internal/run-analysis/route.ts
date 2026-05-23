@@ -4,7 +4,6 @@ import { analysisJobService } from "@/lib/services/analysisJobService";
 import { repositoryService } from "@/lib/services/repositoryService";
 
 export const runtime = "nodejs";
-export const maxDuration = 300; // Allow maximum serverless execution time (up to 5 minutes)
 
 function isAuthorized(request: NextRequest): boolean {
   const configuredSecret = process.env.ANALYSIS_RUNNER_SECRET;

@@ -259,6 +259,7 @@ export class RepositoryService {
       ]);
 
       // Analyze branches
+      console.log(`Analyzing branches for repository ${repositoryId}`);
       await tracker.update(15, "Analyzing branches");
       const defaultBranch = branches.find((b) => b.isDefault)?.name || "main";
 
@@ -307,12 +308,6 @@ export class RepositoryService {
       let failedCount = 0;
 
       const totalNewCommits = Math.max(1, newCommits.length);
-      let lastCommitProgressUpdateAt = Date.now();
-
-      if (newCommits.length === 0) {
-        await tracker.update(60, "Storing commits (Up to date)");
-      }
-
       const commitChunkSize = 100;
 
       for (let i = 0; i < newCommits.length; i += commitChunkSize) {
@@ -376,11 +371,8 @@ export class RepositoryService {
             });
           }
 
-          // Periodically report progress (every ~2s)
-          if (Date.now() - lastCommitProgressUpdateAt > 2000) {
-            await tracker.progressSubTask(25, 60, i + chunk.length, totalNewCommits, `Storing commits (${i + chunk.length}/${newCommits.length})`);
-            lastCommitProgressUpdateAt = Date.now();
-          }
+          const pct = 25 + Math.round((Math.min(i + chunk.length, newCommits.length) / totalNewCommits) * 35);
+          await tracker.update(Math.min(60, pct), `Storing commits (${Math.min(i + chunk.length, newCommits.length)}/${newCommits.length})`);
         } catch (error: any) {
           failedCount += chunk.length;
           console.error(`Failed to insert commit chunk starting at ${i}:`, error.message);
@@ -423,16 +415,48 @@ export class RepositoryService {
       }
 
       // Analyze contributors and languages in parallel; both are independent after file scan.
+      console.log(`Analyzing contributors for repository ${repositoryId}`);
       await tracker.update(80, "Analyzing contributors");
       const contributorsPromise = gitService.getContributors();
 
       console.log(`Detecting languages for repository ${repositoryId}`);
+      await tracker.update(90, "Detecting languages");
       const languagesPromise = gitService.detectLanguages();
 
       const [contributors, languages] = await Promise.all([
         contributorsPromise,
         languagesPromise,
       ]);
+
+      const totalContributions = contributors.reduce(
+        (sum, c) => sum + c.commits,
+        0,
+      );
+
+      if (contributors.length > 0) {
+        await prisma.contributor.createMany({
+          data: contributors.map((contributor) => {
+            const percentage =
+              totalContributions > 0
+                ? (contributor.commits / totalContributions) * 100
+                : 0;
+            return {
+              name: contributor.name,
+              email: contributor.email,
+              commits: contributor.commits,
+              additions: contributor.additions,
+              deletions: contributor.deletions,
+              percentage,
+              firstCommit: contributor.firstCommit,
+              lastCommit: contributor.lastCommit,
+              repositoryId,
+            };
+          }),
+          skipDuplicates: true,
+        });
+      }
+
+
       // Languages to ignore (config/data formats, not actual code)
       const ignoredLanguages = ["JSON", "YAML", "Markdown", "TOML", "CSV"];
 

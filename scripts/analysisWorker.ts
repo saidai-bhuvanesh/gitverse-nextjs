@@ -177,12 +177,10 @@ export async function startAnalysisWorkerLoop(opts?: {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
-  const startTime = Date.now();
-
   while (!stopping) {
     try {
       if (opts?.timeBudgetMs) {
-        const elapsed = Date.now() - startTime;
+        const elapsed = Date.now() - startTimeMs;
         if (elapsed >= opts.timeBudgetMs) {
           console.log(`Time budget of ${opts.timeBudgetMs}ms reached (elapsed: ${elapsed}ms). Processed ${jobsProcessed} jobs. Shutting down gracefully...`);
           break;

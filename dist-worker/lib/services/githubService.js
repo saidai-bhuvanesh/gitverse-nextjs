@@ -36,10 +36,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.githubService = exports.GitHubService = exports.GitHubRateLimitError = void 0;
 exports.sanitizeGitHubError = sanitizeGitHubError;
 const axios_1 = __importStar(require("axios"));
+const rateLimit_1 = require("@/lib/utils/rateLimit");
 class GitHubRateLimitError extends Error {
     retryAfterSeconds;
     constructor(retryAfterSeconds) {
-        super(`GitHub API rate limit reached. Please retry after ${retryAfterSeconds} seconds.`);
+        super(retryAfterSeconds > 0
+            ? `GitHub API rate limit reached. Please retry after ${retryAfterSeconds} seconds.`
+            : "GitHub API rate limit reached. Please try again later.");
         this.name = "GitHubRateLimitError";
         this.retryAfterSeconds = retryAfterSeconds;
     }
@@ -102,30 +105,40 @@ class GitHubService {
             }
             const status = error.response?.status;
             const config = error.config;
-            if (status === 429 || status === 403) {
+            config.retryCount = config.retryCount || 0;
+            const isRateLimit = status === 429 || status === 403;
+            if (isRateLimit) {
                 const rateLimitRemaining = error.response?.headers?.["x-ratelimit-remaining"];
                 if (status === 429 || rateLimitRemaining === "0") {
-                    const retryAfterHeader = error.response?.headers?.["retry-after"];
-                    const resetHeader = error.response?.headers?.["x-ratelimit-reset"];
-                    let retrySeconds = 60;
-                    if (retryAfterHeader) {
-                        retrySeconds = parseInt(retryAfterHeader, 10);
+                    if (config.retryCount >= 3) {
+                        const retryAfterHeader = error.response?.headers?.["retry-after"];
+                        const resetHeader = error.response?.headers?.["x-ratelimit-reset"];
+                        let retrySeconds = 60;
+                        if (retryAfterHeader) {
+                            retrySeconds = parseInt(retryAfterHeader, 10);
+                        }
+                        else if (resetHeader) {
+                            const resetTime = parseInt(resetHeader, 10) * 1000;
+                            retrySeconds = Math.max(1, Math.ceil((resetTime - Date.now()) / 1000));
+                        }
+                        throw new GitHubRateLimitError(retrySeconds);
                     }
-                    else if (resetHeader) {
-                        const resetTime = parseInt(resetHeader, 10) * 1000;
-                        retrySeconds = Math.max(1, Math.ceil((resetTime - Date.now()) / 1000));
-                    }
-                    throw new GitHubRateLimitError(retrySeconds);
+                    config.retryCount += 1;
+                    const delayMs = (0, rateLimit_1.getRetryDelayMs)(error, config.retryCount) ?? 1000;
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
+                    return this.client(config);
                 }
             }
-            const retryStatusCodes = [502, 503, 504];
-            if ((status && retryStatusCodes.includes(status)) ||
+            const retryableCodes = [409, 502, 503, 504];
+            if ((status && retryableCodes.includes(status)) ||
                 error.code === "ECONNABORTED" ||
+                error.code === "ECONNRESET" ||
+                error.code === "ETIMEDOUT" ||
                 !error.response) {
-                config.retryCount = config.retryCount || 0;
                 if (config.retryCount < 3) {
                     config.retryCount += 1;
                     const backoff = Math.pow(2, config.retryCount) * 1000 + Math.random() * 1000;
+                    console.log(`Retrying GitHub API request ${config.url} (attempt ${config.retryCount}) due to ${status || error.code}...`);
                     await new Promise((resolve) => setTimeout(resolve, backoff));
                     return this.client(config);
                 }
@@ -147,8 +160,23 @@ class GitHubService {
      * Get repository information
      */
     async getRepository(owner, repo) {
-        const response = await this.client.get(`/repos/${owner}/${repo}`);
-        return response.data;
+        try {
+            const response = await this.client.get(`/repos/${owner}/${repo}`);
+            const data = response.data;
+            // Detect renamed repositories safely
+            const expectedFullName = `${owner}/${repo}`.toLowerCase();
+            if (data.full_name && data.full_name.toLowerCase() !== expectedFullName) {
+                console.warn(`GitHub repository renamed: requested ${expectedFullName}, but received ${data.full_name}`);
+            }
+            return data;
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && error.response?.status === 404) {
+                console.warn(`GitHub repository not found (404): ${owner}/${repo}. It may have been deleted or access was lost.`);
+                return null;
+            }
+            throw sanitizeGitHubError(error);
+        }
     }
     /**
      * List user repositories
@@ -187,36 +215,68 @@ class GitHubService {
      * Get repository branches
      */
     async getBranches(owner, repo) {
-        const response = await this.client.get(`/repos/${owner}/${repo}/branches`);
-        return response.data;
+        try {
+            const response = await this.client.get(`/repos/${owner}/${repo}/branches`);
+            return response.data;
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && error.response?.status === 404) {
+                return [];
+            }
+            throw sanitizeGitHubError(error);
+        }
     }
     /**
      * Get repository commits
      */
     async getCommits(owner, repo, params) {
-        const response = await this.client.get(`/repos/${owner}/${repo}/commits`, {
-            params: {
-                sha: params?.sha,
-                path: params?.path,
-                per_page: params?.per_page || 100,
-                page: params?.page || 1,
-            },
-        });
-        return response.data;
+        try {
+            const response = await this.client.get(`/repos/${owner}/${repo}/commits`, {
+                params: {
+                    sha: params?.sha,
+                    path: params?.path,
+                    per_page: params?.per_page || 100,
+                    page: params?.page || 1,
+                },
+            });
+            return response.data;
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && (error.response?.status === 404 || error.response?.status === 409)) {
+                return []; // 409 Conflict means repository is empty
+            }
+            throw sanitizeGitHubError(error);
+        }
     }
     /**
      * Get commit details with stats
      */
     async getCommit(owner, repo, sha) {
-        const response = await this.client.get(`/repos/${owner}/${repo}/commits/${sha}`);
-        return response.data;
+        try {
+            const response = await this.client.get(`/repos/${owner}/${repo}/commits/${sha}`);
+            return response.data;
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && error.response?.status === 404) {
+                return null;
+            }
+            throw sanitizeGitHubError(error);
+        }
     }
     /**
      * Get pull request metadata
      */
     async getPullRequest(owner, repo, pullNumber) {
-        const response = await this.client.get(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
-        return response.data;
+        try {
+            const response = await this.client.get(`/repos/${owner}/${repo}/pulls/${pullNumber}`);
+            return response.data;
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && error.response?.status === 404) {
+                return null;
+            }
+            throw sanitizeGitHubError(error);
+        }
     }
     /**
      * List pull request files (includes patch hunks when available)
@@ -225,19 +285,27 @@ class GitHubService {
         const perPage = Math.min(Math.max(params?.per_page ?? 100, 1), 100);
         const maxPages = Math.min(Math.max(params?.max_pages ?? 10, 1), 50);
         const all = [];
-        for (let page = 1; page <= maxPages; page++) {
-            const response = await this.client.get(`/repos/${owner}/${repo}/pulls/${pullNumber}/files`, {
-                params: {
-                    per_page: perPage,
-                    page,
-                },
-            });
-            const items = response.data;
-            if (!Array.isArray(items) || items.length === 0)
-                break;
-            all.push(...items);
-            if (items.length < perPage)
-                break;
+        try {
+            for (let page = 1; page <= maxPages; page++) {
+                const response = await this.client.get(`/repos/${owner}/${repo}/pulls/${pullNumber}/files`, {
+                    params: {
+                        per_page: perPage,
+                        page,
+                    },
+                });
+                const items = response.data;
+                if (!Array.isArray(items) || items.length === 0)
+                    break;
+                all.push(...items);
+                if (items.length < perPage)
+                    break;
+            }
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && error.response?.status === 404) {
+                return all; // Return what we have (likely empty) if 404 occurs
+            }
+            throw sanitizeGitHubError(error);
         }
         return all;
     }
@@ -283,15 +351,31 @@ class GitHubService {
      * Get repository languages
      */
     async getLanguages(owner, repo) {
-        const response = await this.client.get(`/repos/${owner}/${repo}/languages`);
-        return response.data;
+        try {
+            const response = await this.client.get(`/repos/${owner}/${repo}/languages`);
+            return response.data;
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && error.response?.status === 404) {
+                return {};
+            }
+            throw sanitizeGitHubError(error);
+        }
     }
     /**
      * Get repository contributors
      */
     async getContributors(owner, repo) {
-        const response = await this.client.get(`/repos/${owner}/${repo}/contributors`);
-        return response.data;
+        try {
+            const response = await this.client.get(`/repos/${owner}/${repo}/contributors`);
+            return response.data;
+        }
+        catch (error) {
+            if ((0, axios_1.isAxiosError)(error) && error.response?.status === 404) {
+                return [];
+            }
+            throw sanitizeGitHubError(error);
+        }
     }
     /**
      * Search repositories

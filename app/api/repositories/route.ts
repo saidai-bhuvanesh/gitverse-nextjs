@@ -3,29 +3,6 @@ import { isHttpError, requireAuth } from "@/lib/api-auth";
 import { repositoryService } from "@/lib/services/repositoryService";
 import { analysisJobService } from "@/lib/services/analysisJobService";
 
-function normalizeKnownRepoHttpUrl(input: string): string | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(input);
-  } catch {
-    return null;
-  }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-
-  const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
-  const supportedHosts = new Set(["github.com", "gitlab.com", "bitbucket.org"]);
-  if (!supportedHosts.has(host)) return input;
-
-  const parts = parsed.pathname.split("/").filter(Boolean);
-  if (parts.length < 2) return null;
-
-  const owner = parts[0];
-  const repo = parts[1].replace(/\.git$/, "");
-  if (!owner || !repo) return null;
-
-  return `${parsed.protocol}//${parsed.host}/${owner}/${repo}`;
-}
 
 function kickLocalRunner(request: NextRequest) {
   if (process.env.NODE_ENV === "production") return;
@@ -165,20 +142,9 @@ export async function POST(request: NextRequest) {
       host,
     });
 
-    const normalizedUrl = normalizeKnownRepoHttpUrl(trimmedUrl);
-    if (!normalizedUrl) {
-      return NextResponse.json(
-        {
-          error:
-            "Invalid repository URL. Use a full repository URL like https://github.com/owner/repo",
-        },
-        { status: 400 },
-      );
-    }
-
     const repository = await repositoryService.createRepository({
       name: trimmedName,
-      url: normalizedUrl,
+      url: trimmedUrl,
       description: trimmedDescription || undefined,
       userId: user.userId,
     });

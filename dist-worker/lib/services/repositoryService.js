@@ -43,6 +43,50 @@ const path = __importStar(require("path"));
 const os = __importStar(require("os"));
 const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs/promises"));
+class AnalysisProgressTracker {
+    repositoryId;
+    reporter;
+    constructor(repositoryId, reporter) {
+        this.repositoryId = repositoryId;
+        this.reporter = reporter;
+    }
+    async update(percent, message, details) {
+        const safePercent = Math.max(0, Math.min(100, Math.round(percent || 0)));
+        console.log(`[Repo ${this.repositoryId}] ${safePercent}% - ${message}`);
+        if (!this.reporter)
+            return;
+        try {
+            await this.reporter({
+                progressPercent: safePercent,
+                progressMessage: message,
+                progressDetails: details,
+            });
+        }
+        catch {
+            // Progress reporting must never break analysis
+        }
+    }
+    async progressSubTask(startPercent, endPercent, current, total, message) {
+        if (total <= 0) {
+            await this.update(endPercent, `${message} (Completed)`);
+            return;
+        }
+        const range = endPercent - startPercent;
+        const ratio = Math.max(0, Math.min(1, current / total));
+        const currentPercent = startPercent + (range * ratio);
+        await this.update(currentPercent, message);
+    }
+    async fail(error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error(`[Repo ${this.repositoryId}] Analysis Failed: ${msg}`);
+        if (this.reporter) {
+            try {
+                await this.reporter({ progressMessage: `Failed: ${msg}` });
+            }
+            catch { }
+        }
+    }
+}
 class RepositoryService {
     async tryReadmeFromRepoPath(repoPath) {
         const candidates = [
@@ -159,31 +203,21 @@ class RepositoryService {
             where: { id: repositoryId },
             data: { status: "analyzing" },
         });
-        const report = async (update) => {
-            if (!opts?.onProgress)
-                return;
-            try {
-                await opts.onProgress(update);
-            }
-            catch {
-                // Progress reporting must never break analysis.
-            }
-        };
-        await report({ progressPercent: 1, progressMessage: "Starting" });
+        const tracker = new AnalysisProgressTracker(repositoryId, opts?.onProgress);
+        await tracker.update(1, "Starting analysis");
         // Create temporary directory for cloning
         const tempDir = path.join(os.tmpdir(), "gitverse", `repo-${repositoryId}-${crypto.randomBytes(8).toString("hex")}`);
         let gitService = null;
         try {
             // Clone repository
-            console.log(`Cloning repository ${repository.url} to ${tempDir}`);
-            await report({
-                progressPercent: 5,
-                progressMessage: "Cloning repository",
-            });
+            await tracker.update(5, `Cloning repository ${repository.url}`);
             gitService = await gitService_1.GitService.cloneRepository(repository.url, tempDir);
-            // Capture README early (best-effort)
-            await report({ progressPercent: 8, progressMessage: "Reading README" });
-            const readme = await this.tryReadmeFromRepoPath(tempDir);
+            // Capture README / size / branches in parallel; these are independent once cloned.
+            await tracker.update(8, "Reading README");
+            const readmePromise = this.tryReadmeFromRepoPath(tempDir);
+            const sizePromise = gitService.getRepositorySize();
+            const branchesPromise = gitService.getBranches();
+            const readme = await readmePromise;
             await prisma_1.default.repository.update({
                 where: { id: repositoryId },
                 data: {
@@ -192,19 +226,14 @@ class RepositoryService {
                     readmeFetchedAt: new Date(),
                 },
             });
-            // Get repository size
-            await report({
-                progressPercent: 10,
-                progressMessage: "Calculating size",
-            });
-            const size = await gitService.getRepositorySize();
+            // Get repository size and branches.
+            await tracker.update(10, "Calculating size");
+            const [size, branches] = await Promise.all([
+                sizePromise,
+                branchesPromise,
+            ]);
             // Analyze branches
-            console.log(`Analyzing branches for repository ${repositoryId}`);
-            await report({
-                progressPercent: 15,
-                progressMessage: "Analyzing branches",
-            });
-            const branches = await gitService.getBranches();
+            await tracker.update(15, "Analyzing branches");
             const defaultBranch = branches.find((b) => b.isDefault)?.name || "main";
             await prisma_1.default.branch.createMany({
                 data: branches.map((branch) => ({
@@ -218,11 +247,7 @@ class RepositoryService {
                 skipDuplicates: true,
             });
             // Analyze commits from all branches
-            console.log(`Analyzing commits for repository ${repositoryId}`);
-            await report({
-                progressPercent: 25,
-                progressMessage: "Reading commit history",
-            });
+            await tracker.update(25, "Reading commit history");
             const commits = await gitService.getCommits("--all", 1000);
             console.log(`Total commits fetched from git: ${commits.length}`);
             // IMPORTANT: Do not load *all* existing commits for the repo.
@@ -245,10 +270,15 @@ class RepositoryService {
             let failedCount = 0;
             const totalNewCommits = Math.max(1, newCommits.length);
             let lastCommitProgressUpdateAt = Date.now();
-            for (const commit of newCommits) {
+            if (newCommits.length === 0) {
+                await tracker.update(60, "Storing commits (Up to date)");
+            }
+            const commitChunkSize = 100;
+            for (let i = 0; i < newCommits.length; i += commitChunkSize) {
+                const chunk = newCommits.slice(i, i + commitChunkSize);
                 try {
-                    const createdCommit = await prisma_1.default.commit.create({
-                        data: {
+                    const inserted = await prisma_1.default.commit.createMany({
+                        data: chunk.map((commit) => ({
                             hash: commit.hash,
                             shortHash: commit.shortHash,
                             message: commit.message,
@@ -264,42 +294,52 @@ class RepositoryService {
                             deletions: commit.deletions,
                             filesChanged: commit.filesChanged,
                             repositoryId,
-                        },
+                        })),
+                        skipDuplicates: true,
                     });
-                    insertedCount++;
-                    // Periodically report progress (every ~2s)
-                    if (Date.now() - lastCommitProgressUpdateAt > 2000) {
-                        const pct = 25 + Math.round((insertedCount / totalNewCommits) * 35);
-                        await report({
-                            progressPercent: Math.min(60, pct),
-                            progressMessage: `Storing commits (${insertedCount}/${newCommits.length})`,
-                        });
-                        lastCommitProgressUpdateAt = Date.now();
-                    }
-                    // Store file changes
-                    if (commit.fileChanges.length > 0) {
+                    insertedCount += inserted.count;
+                    const insertedCommits = chunk.length > 0
+                        ? await prisma_1.default.commit.findMany({
+                            where: {
+                                repositoryId,
+                                hash: { in: chunk.map((commit) => commit.hash) },
+                            },
+                            select: { id: true, hash: true },
+                        })
+                        : [];
+                    const commitIdByHash = new Map(insertedCommits.map((commit) => [commit.hash, commit.id]));
+                    const fileChanges = chunk.flatMap((commit) => {
+                        const commitId = commitIdByHash.get(commit.hash);
+                        if (!commitId || commit.fileChanges.length === 0)
+                            return [];
+                        return commit.fileChanges.map((change) => ({
+                            path: change.path,
+                            additions: change.additions,
+                            deletions: change.deletions,
+                            changeType: change.changeType,
+                            commitId,
+                        }));
+                    });
+                    if (fileChanges.length > 0) {
                         await prisma_1.default.fileChange.createMany({
-                            data: commit.fileChanges.map((change) => ({
-                                path: change.path,
-                                additions: change.additions,
-                                deletions: change.deletions,
-                                changeType: change.changeType,
-                                commitId: createdCommit.id,
-                            })),
+                            data: fileChanges,
                             skipDuplicates: true,
                         });
                     }
+                    // Periodically report progress (every ~2s)
+                    if (Date.now() - lastCommitProgressUpdateAt > 2000) {
+                        await tracker.progressSubTask(25, 60, i + chunk.length, totalNewCommits, `Storing commits (${i + chunk.length}/${newCommits.length})`);
+                        lastCommitProgressUpdateAt = Date.now();
+                    }
                 }
                 catch (error) {
-                    failedCount++;
-                    console.error(`Failed to insert commit ${commit.hash}:`, error.message);
-                    // Continue with next commit
+                    failedCount += chunk.length;
+                    console.error(`Failed to insert commit chunk starting at ${i}:`, error.message);
                 }
             }
             console.log(`Commit insertion complete: ${insertedCount} inserted, ${failedCount} failed`);
             // Analyze files
-            console.log(`Analyzing file tree for repository ${repositoryId}`);
-            await report({ progressPercent: 65, progressMessage: "Scanning files" });
+            await tracker.update(65, "Scanning files");
             const files = await gitService.getFileTree();
             // Avoid querying existing file paths (can be huge). Just rely on
             // `skipDuplicates` with the unique constraint (repositoryId, path).
@@ -320,52 +360,46 @@ class RepositoryService {
                         skipDuplicates: true,
                     });
                     const insertedSoFar = Math.min(files.length, i + chunk.length);
-                    await report({
-                        progressPercent: 65 + Math.round((insertedSoFar / files.length) * 10),
-                        progressMessage: `Storing files (${insertedSoFar}/${files.length})`,
-                    });
+                    await tracker.progressSubTask(65, 75, insertedSoFar, files.length, `Storing files (${insertedSoFar}/${files.length})`);
                 }
                 console.log(`File scan complete: processed ${files.length} paths for repository ${repositoryId}`);
             }
             else {
-                console.log(`No files found for repository ${repositoryId}`);
+                await tracker.update(75, "Storing files (Skipped - no files found)");
             }
-            // Analyze contributors
-            console.log(`Analyzing contributors for repository ${repositoryId}`);
-            await report({
-                progressPercent: 80,
-                progressMessage: "Analyzing contributors",
-            });
-            const contributors = await gitService.getContributors();
-            const totalContributions = contributors.reduce((sum, c) => sum + c.commits, 0);
-            if (contributors.length > 0) {
-                await prisma_1.default.contributor.createMany({
-                    data: contributors.map((contributor) => {
-                        const percentage = totalContributions > 0
-                            ? (contributor.commits / totalContributions) * 100
-                            : 0;
-                        return {
-                            name: contributor.name,
-                            email: contributor.email,
-                            commits: contributor.commits,
-                            additions: contributor.additions,
-                            deletions: contributor.deletions,
-                            percentage,
-                            firstCommit: contributor.firstCommit,
-                            lastCommit: contributor.lastCommit,
-                            repositoryId,
-                        };
-                    }),
-                    skipDuplicates: true,
-                });
-            }
-            // Detect languages
+            // Analyze contributors and languages in parallel; both are independent after file scan.
+            await tracker.update(80, "Analyzing contributors");
+            const contributorsPromise = gitService.getContributors();
             console.log(`Detecting languages for repository ${repositoryId}`);
-            await report({
-                progressPercent: 90,
-                progressMessage: "Detecting languages",
+            const languagesPromise = gitService.detectLanguages();
+            const [contributors, languages] = await Promise.all([
+                contributorsPromise,
+                languagesPromise,
+            ]);
+            const totalContributions = contributors.reduce((sum, c) => sum + c.commits, 0);
+            await prisma_1.default.$transaction(async (tx) => {
+                await tx.contributor.deleteMany({
+                    where: { repositoryId },
+                });
+                if (contributors.length > 0) {
+                    await tx.contributor.createMany({
+                        data: contributors.map((c) => ({
+                            name: c.name,
+                            email: c.email,
+                            commits: c.commits,
+                            additions: c.additions,
+                            deletions: c.deletions,
+                            firstCommit: c.firstCommit,
+                            lastCommit: c.lastCommit,
+                            percentage: totalContributions > 0
+                                ? Math.round((c.commits / totalContributions) * 100 * 100) / 100
+                                : 0,
+                            repositoryId,
+                        })),
+                        skipDuplicates: true,
+                    });
+                }
             });
-            const languages = await gitService.detectLanguages();
             // Languages to ignore (config/data formats, not actual code)
             const ignoredLanguages = ["JSON", "YAML", "Markdown", "TOML", "CSV"];
             // Filter out ignored languages
@@ -388,18 +422,34 @@ class RepositoryService {
                 ...lang,
                 percentage: roundedPercentages[index],
             }));
-            if (languagesWithAdjustedPercentage.length > 0) {
-                await prisma_1.default.language.createMany({
-                    data: languagesWithAdjustedPercentage.map((language) => ({
-                        name: language.name,
-                        percentage: language.percentage,
-                        bytes: language.bytes,
-                        lines: language.lines,
-                        repositoryId,
-                    })),
-                    skipDuplicates: true,
+            await prisma_1.default.$transaction(async (tx) => {
+                // Always clear stale languages even when result set is empty
+                await tx.language.deleteMany({
+                    where: { repositoryId }
                 });
-            }
+                if (languagesWithAdjustedPercentage.length > 0) {
+                    const validLanguages = languagesWithAdjustedPercentage
+                        .map((language) => {
+                        const trimmedName = language.name.trim();
+                        if (!trimmedName)
+                            return null;
+                        return {
+                            name: trimmedName,
+                            percentage: language.percentage,
+                            bytes: language.bytes,
+                            lines: language.lines,
+                            repositoryId,
+                        };
+                    })
+                        .filter((lang) => lang !== null);
+                    if (validLanguages.length > 0) {
+                        await tx.language.createMany({
+                            data: validLanguages,
+                            skipDuplicates: true,
+                        });
+                    }
+                }
+            });
             // Update repository with final data
             await prisma_1.default.repository.update({
                 where: { id: repositoryId },
@@ -410,16 +460,14 @@ class RepositoryService {
                     size: size,
                 },
             });
-            await report({ progressPercent: 100, progressMessage: "Completed" });
-            console.log(`Repository ${repositoryId} analysis completed`);
+            await tracker.update(100, "Completed");
         }
         catch (error) {
-            console.error(`Error analyzing repository ${repositoryId}:`, error);
             await prisma_1.default.repository.update({
                 where: { id: repositoryId },
                 data: { status: "failed" },
             });
-            await report({ progressMessage: "Failed" });
+            await tracker.fail(error);
             throw error;
         }
         finally {
@@ -497,9 +545,16 @@ class RepositoryService {
         if (!repository) {
             throw new Error("Repository not found");
         }
-        await prisma_1.default.repository.delete({
-            where: { id },
-        });
+        // Delete related analysis jobs and the repository in a transaction
+        // to ensure no orphaned rows remain if the process is interrupted.
+        await prisma_1.default.$transaction([
+            prisma_1.default.analysisJob.deleteMany({
+                where: { repositoryId: id },
+            }),
+            prisma_1.default.repository.delete({
+                where: { id },
+            }),
+        ]);
         return { success: true };
     }
     /**

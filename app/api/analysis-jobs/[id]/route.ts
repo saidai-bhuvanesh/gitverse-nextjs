@@ -55,6 +55,7 @@ export async function GET(
       kickLocalRunner(request, job.id);
     }
 
+
     return NextResponse.json({
       job: {
         id: job.id,

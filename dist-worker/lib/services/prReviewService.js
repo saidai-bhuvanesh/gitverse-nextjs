@@ -110,6 +110,9 @@ function parsePullRequestUrl(url) {
 async function reviewPullRequest(params) {
     const github = new githubService_1.GitHubService(params.githubToken);
     const pr = await github.getPullRequest(params.owner, params.repo, params.number);
+    if (!pr) {
+        throw new Error(`Pull request ${params.owner}/${params.repo}#${params.number} not found. It may have been deleted or access is denied.`);
+    }
     const prFiles = await github.getPullRequestFiles(params.owner, params.repo, params.number);
     const { diff, stats } = buildDiffForPrompt(prFiles.map((f) => ({
         filename: f.filename,
