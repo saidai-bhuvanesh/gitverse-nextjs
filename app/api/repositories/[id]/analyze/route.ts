@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isHttpError, requireAuth } from "@/lib/middleware";
 import { repositoryService } from "@/lib/services/repositoryService";
 import { analysisJobService } from "@/lib/services/analysisJobService";
+import prisma from "@/lib/prisma";
 
 export async function POST(
   request: NextRequest,
@@ -27,6 +28,25 @@ export async function POST(
         { status: 404 }
       );
     }
+
+    const existingJob = await prisma.analysisJob.findFirst({
+  where: {
+    repositoryId: id,
+    status: {
+      in: ["QUEUED", "PROCESSING"],
+    },
+  },
+});
+
+if (existingJob) {
+  return NextResponse.json(
+    {
+      error: "Analysis already in progress",
+      jobId: existingJob.id,
+    },
+    { status: 409 }
+  );
+}
 
     const job = await analysisJobService.createRepositoryAnalysisJob({
       repositoryId: id,
