@@ -223,7 +223,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         </header>
 
         {/* Page Content */}
-        <main className="p-6">{children}</main>
+        <main id="main-content" className="p-6">{children}</main>
       </div>
     </div>
   );
