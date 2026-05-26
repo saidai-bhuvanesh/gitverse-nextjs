@@ -4,16 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Search,
-  Grid,
-  List,
-  GitBranch,
-  Clock,
-  Activity,
-  Pin,
-  PinOff,
-} from "lucide-react";
+import { Search, Grid, List, GitBranch, Clock, Activity } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   Card,
@@ -42,7 +33,6 @@ interface Repository {
   status?: "completed" | "processing" | "failed";
   createdAt?: string;
   updatedAt?: string;
-  isPinned?: boolean;
 }
 
 export default function SearchPage() {
@@ -52,9 +42,7 @@ export default function SearchPage() {
 
   const [searchQuery, setSearchQuery] = useState(initialUrl);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [sortBy, setSortBy] = useState<"recent" | "stars" | "name" | "pinned">(
-    "pinned",
-  );
+  const [sortBy, setSortBy] = useState<"recent" | "stars" | "name">("recent");
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -64,48 +52,27 @@ export default function SearchPage() {
   }, []);
 
   const fetchRepositories = async () => {
-    setError("");
+     setError("");
     try {
       const token = localStorage.getItem("gitverse_token");
       const response = await axios.get(buildApiUrl("/api/repositories"), {
         headers: { Authorization: `Bearer ${token}` },
       });
+      // API returns { repositories: [...] }
       const repos = response.data.repositories || [];
       setRepositories(Array.isArray(repos) ? repos : []);
-    } catch (error) {
-      console.error("Error fetching repositories:", error);
-      setRepositories([]);
-      setError(
-        "Failed to load repositories. Please check your connection and try again.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+    }  
+    catch (error) {
+  console.error("Error fetching repositories:", error);
 
-  const togglePin = async (repoId: string, currentPinned: boolean) => {
-    try {
-      const token = localStorage.getItem("gitverse_token");
-      setRepositories((prev) =>
-        prev.map((r) =>
-          r.id === repoId ? { ...r, isPinned: !currentPinned } : r,
-        ),
-      );
-      await axios.patch(
-        buildApiUrl(`/api/repositories/${repoId}/pin`),
-        {},
-        {
-          withCredentials: true,
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        },
-      );
-    } catch (error) {
-      setRepositories((prev) =>
-        prev.map((r) =>
-          r.id === repoId ? { ...r, isPinned: currentPinned } : r,
-        ),
-      );
-      console.error("Failed to toggle pin:", error);
+  setRepositories([]);
+
+  setError(
+    "Failed to load repositories. Please check your connection and try again."
+  );
+}
+finally {
+      setLoading(false);
     }
   };
 
@@ -115,41 +82,20 @@ export default function SearchPage() {
           repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (repo.description || "")
             .toLowerCase()
-            .includes(searchQuery.toLowerCase()),
+            .includes(searchQuery.toLowerCase())
       )
     : [];
 
   const sortedRepositories = [...filteredRepositories].sort((a, b) => {
-    if (sortBy === "pinned") {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return 0;
-    }
     if (sortBy === "stars") return (b.stars || 0) - (a.stars || 0);
     if (sortBy === "name") return a.name.localeCompare(b.name);
-    return 0;
+    return 0; // 'recent' is already sorted
   });
-
-  const PinButton = ({ repo }: { repo: Repository }) => (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        togglePin(repo.id, repo.isPinned ?? false);
-      }}
-      className="p-1.5 rounded hover:bg-muted transition-colors flex-shrink-0"
-      title={repo.isPinned ? "Unpin repository" : "Pin repository"}
-    >
-      {repo.isPinned ? (
-        <PinOff className="h-4 w-4 text-primary" />
-      ) : (
-        <Pin className="h-4 w-4 text-muted-foreground" />
-      )}
-    </button>
-  );
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Header */}
         <div className="px-2 sm:px-0">
           <h1 className="text-2xl sm:text-3xl font-heading font-bold mb-2">
             Browse Repositories
@@ -159,6 +105,7 @@ export default function SearchPage() {
           </p>
         </div>
 
+        {/* Search and Filters */}
         <Card className="glass">
           <CardContent className="pt-4 sm:pt-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -217,6 +164,7 @@ export default function SearchPage() {
           </CardContent>
         </Card>
 
+        {/* Results Count */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {sortedRepositories.length}{" "}
@@ -290,13 +238,92 @@ export default function SearchPage() {
   </div>
 ) : sortedRepositories.length === 0 ? (
           searchQuery ? (
-            <EmptyState
-              icon={Search}
-              title="No Results Found"
-              description="We couldn't find any repositories matching your search query. Try a different term."
-              actionLabel="Clear Search"
-              onAction={() => setSearchQuery("")}
-            />
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <EmptyState
+                icon={Search}
+                title="No repositories found"
+                description={`We couldn't find any repositories matching "${searchQuery}". Try adjusting your search term.`}
+                suggestions={[
+                  "Try another repository",
+                  "Check the GitHub username",
+                ]}
+                actionLabel="Clear Search"
+                onAction={() => setSearchQuery("")}
+              />
+              
+              {repositories.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2 sm:px-0">
+                    <h2 className="text-xl font-heading font-semibold flex items-center gap-2">
+                      <GitBranch className="h-5 w-5 text-primary" />
+                      Explore Available Repositories
+                    </h2>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                    {repositories.slice(0, 3).map((repo, index) => (
+                      <Card
+                        key={repo.id}
+                        className="glass glass-hover cursor-pointer transition-transform hover:scale-[1.02] focus-within:scale-[1.02]"
+                        onClick={() => router.push(`/repo/${repo.id}`)}
+                        style={{ animationDelay: `${index * 0.05}s` }}
+                      >
+                        <CardHeader>
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-primary/10">
+                                <GitBranch className="h-5 w-5 text-primary" />
+                              </div>
+                              <div>
+                                <CardTitle className="font-heading text-base sm:text-lg break-all">
+                                  {repo.name}
+                                </CardTitle>
+                                <CardDescription className="text-xs font-mono break-all max-w-[180px] sm:max-w-[240px] md:max-w-[320px] lg:max-w-[400px]">
+                                  {repo.url}
+                                </CardDescription>
+                              </div>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-xs sm:text-sm text-muted-foreground mb-4 line-clamp-2 min-h-[32px]">
+                            {repo.description || "No description available"}
+                          </p>
+                          <div className="flex flex-wrap items-center justify-between text-xs sm:text-sm">
+                            <div className="flex items-center gap-4 text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <Activity className="h-4 w-4" />
+                                {(repo as any)._count?.commits || 0}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <GitBranch className="h-4 w-4" />
+                                {(repo as any)._count?.branches || 0}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {new Date(
+                                (repo as any).lastAnalyzedAt || (repo as any).createdAt
+                              ).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <div className="mt-3 pt-3 border-t border-border/50">
+                            {(repo as any).languages?.[0]?.name ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-accent/10 text-accent">
+                                {(repo as any).languages[0].name}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-muted/50 text-muted-foreground">
+                                No language
+                              </span>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <EmptyState
               icon={GitBranch}
@@ -317,11 +344,11 @@ export default function SearchPage() {
               >
                 <CardHeader>
                   <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="p-2 rounded-lg bg-primary/10 flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-primary/10">
                         <GitBranch className="h-5 w-5 text-primary" />
                       </div>
-                      <div className="min-w-0">
+                      <div>
                         <CardTitle className="font-heading text-base sm:text-lg break-all">
                           {repo.name}
                         </CardTitle>
@@ -330,7 +357,6 @@ export default function SearchPage() {
                         </CardDescription>
                       </div>
                     </div>
-                    <PinButton repo={repo} />
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -351,7 +377,7 @@ export default function SearchPage() {
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
                       {new Date(
-                        (repo as any).lastAnalyzedAt || (repo as any).createdAt,
+                        (repo as any).lastAnalyzedAt || (repo as any).createdAt
                       ).toLocaleDateString()}
                     </div>
                   </div>
@@ -381,7 +407,7 @@ export default function SearchPage() {
               >
                 <CardContent className="pt-4 sm:pt-6">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-                    <div className="p-3 rounded-lg bg-primary/10 self-center flex-shrink-0">
+                    <div className="p-3 rounded-lg bg-primary/10 self-center">
                       <GitBranch className="h-6 w-6 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -411,12 +437,11 @@ export default function SearchPage() {
                           <Clock className="h-4 w-4" />
                           {new Date(
                             (repo as any).lastAnalyzedAt ||
-                              (repo as any).createdAt,
+                              (repo as any).createdAt
                           ).toLocaleDateString()}
                         </div>
                       </div>
                     </div>
-                    <PinButton repo={repo} />
                   </div>
                 </CardContent>
               </Card>
