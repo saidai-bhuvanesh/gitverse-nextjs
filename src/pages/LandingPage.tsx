@@ -26,9 +26,6 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui";
-import { RecentReposList } from "@/components/RecentReposList";
-import { useRecentRepos } from "@/hooks/useRecentRepos";
-
 export default function LandingPage() {
   const router = useRouter();
   const [repoUrl, setRepoUrl] = useState("");
