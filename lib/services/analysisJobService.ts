@@ -252,6 +252,8 @@ export class AnalysisJobService {
       data: {
         status: "FAILED",
         error: "Job timed out - no heartbeat received",
+        progressMessage: "Job timed out - no heartbeat received",
+        progressPercent: null,
         finishedAt: new Date(),
         lockedAt: null,
         lockedBy: null,
