@@ -431,6 +431,17 @@ model AiRequestLog {
 }
 
 model WebhookEvent {
+  id           String    @id @default(uuid()) @db.Uuid
+  event        String
+  action       String?
+  payload      Json
+  status       String    @default("pending") // pending, processing, completed, failed
+  error        String?   @db.Text
+  retryCount   Int       @default(0) @map("retry_count")
+  maxRetries   Int       @default(3) @map("max_retries")
+  nextRetryAt  DateTime? @map("next_retry_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
   id        String   @id @default(uuid()) @db.Uuid
   event     String
   action    String?
@@ -441,6 +452,7 @@ model WebhookEvent {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([status, createdAt])
+  @@index([status, nextRetryAt])
   @@map("webhook_events")
 }
 
