@@ -1,6 +1,7 @@
 import prisma from "../prisma";
 import crypto from "crypto";
 import { WebhookQueueStatus } from "../../types/database-health";
+import { SafeHttpClient } from "@/services/security/safe-http-client";
 
 const MAX_CONCURRENT_WEBHOOKS = 5;
 
@@ -51,14 +52,15 @@ export class WebhookQueueService {
 
       // Dispatch non-blocking fetches
       for (const job of nextJobs) {
-        fetch(workerUrl, {
+        SafeHttpClient.fetch(workerUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": internalToken,
           },
           body: JSON.stringify({ eventId: job.id }),
-        }).catch(err => {
+          allowLocalhost: true, // Allow localhost since it is an internal route
+        }).catch((err: any) => {
           console.error(`[WebhookQueue] Failed to trigger worker for job ${job.id}:`, err);
         });
       }

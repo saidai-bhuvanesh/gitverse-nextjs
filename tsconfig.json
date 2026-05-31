@@ -22,9 +22,11 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"],
       "@/lib/*": ["./lib/*"],
-      "@/app/*": ["./app/*"]
+      "@/app/*": ["./app/*"],
+      "@/types/*": ["./types/*"],
+      "@/services/security/*": ["./services/security/*"],
+      "@/middleware/*": ["./middleware/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

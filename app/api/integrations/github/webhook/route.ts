@@ -4,10 +4,10 @@ import prisma from "@/lib/prisma";
 import crypto from "crypto";
 import { QuotaService } from "@/lib/services/quotaService";
 import { getClientIp } from "@/lib/services/rateLimitService";
+import { SafeHttpClient } from "@/services/security/safe-http-client";
 import { webhookQueue } from "@/lib/services/webhook-queue";
 import { dbHealthService } from "@/lib/services/db-health";
 import { webhookRetryService } from "@/lib/services/webhook-retry";
-
 
 export const runtime = "nodejs";
 
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
 
     // Trigger internal workers asynchronously via queue manager
     const baseUrl = process.env.NEXTAUTH_URL || `http://${request.headers.get("host") || "localhost:3000"}`;
-    webhookQueue.triggerWorkers(baseUrl).catch(err => {
+    webhookQueue.triggerWorkers(baseUrl).catch((err: any) => {
       console.error("[Webhook] Failed to trigger queue workers:", err);
     });
 
