@@ -12,10 +12,11 @@ export class DependencyGraphAnalyzer {
     const affectedSet = new Set<string>();
 
     try {
-      const graph = await DependencyGraphService.buildGraph(repoUrl);
+      const graphService = new DependencyGraphService();
+      const graph = await graphService.buildGraph(repoUrl);
       
       for (const file of changedFiles) {
-        const dependents = DependencyGraphService.getDownstreamDependents(graph, file, 3);
+        const dependents = graphService.getDownstreamDependents(graph, [file], 3);
         if (dependents.length > 0) {
           dependencyPaths[file] = dependents;
           dependents.forEach(dep => affectedSet.add(dep));
