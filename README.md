@@ -234,8 +234,7 @@ Environment Variables:**
 | Variable | Required | Description | Example |
 |---|---|---|---|
 | `DATABASE_URL` |  Yes | PostgreSQL connection string (Neon recommended) | `postgresql://user:pass@host/db` |
-| `JWT_SECRET` | No (if `NEXTAUTH_SECRET` is set) | Secret key for JWT signing (fallback for `NEXTAUTH_SECRET`) | `openssl rand -base64 32` |
-| `GEMINI_API_KEY` |  Yes | Google Gemini API key | Get from [Google AI Studio](https://aistudio.google.com) |
+| `JWT_SECRET` | Yes | Secret key for JWT signing | `openssl rand -base64 32` |
 | `NEXTAUTH_URL` |  Yes | Your deployed Vercel URL | `https://your-app.vercel.app` |
 | `NEXTAUTH_SECRET` |  Yes | NextAuth session signing secret | `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` |  No (required for OAuth) | Google OAuth client ID | From Google Cloud Console |
@@ -357,7 +356,7 @@ firebase deploy
 Required:
 
 - `DATABASE_URL` - PostgreSQL connection string
-- JWT_SECRET - JWT signing secret. Used for session signing. The app may fail without this.
+- `JWT_SECRET` - JWT signing secret. The app will crash on startup without it.
 - `GEMINI_API_KEY` - Google Gemini API key
 
 OAuth (Google / NextAuth):
