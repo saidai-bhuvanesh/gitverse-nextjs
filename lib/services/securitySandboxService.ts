@@ -5,6 +5,8 @@ import * as path from "path";
 import * as os from "os";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
+import { getDecryptedGitHubToken } from "@/lib/utils/githubToken";
+import { GitHubService } from "@/lib/services/githubService";
 
 const execFileAsync = promisify(execFile);
 
@@ -295,6 +297,54 @@ export async function runSecuritySandbox(params: {
         completedAt: new Date(),
       },
     });
+
+    if (params.pullRequestId && (result.exploitPayload || result.testResults.some(r => !r.passed))) {
+      try {
+        const repository = await prisma.repository.findUnique({ where: { id: params.repositoryId } });
+        const pr = await prisma.pullRequest.findUnique({ where: { id: params.pullRequestId } });
+        
+        if (repository && pr) {
+          const ownerRepo = GitHubService.parseGitHubUrl(params.repositoryUrl);
+          if (ownerRepo) {
+            const { owner, repo } = ownerRepo;
+            const token = await getDecryptedGitHubToken(repository.userId);
+            const github = new GitHubService(token || undefined);
+            
+            // Check gitverse.yml for toggle
+            const configContent = await github.getFileContent(owner, repo, "gitverse.yml", params.headSha);
+            let shouldPost = true;
+            if (configContent) {
+              if (configContent.includes("sandboxComments: false") || configContent.includes("sandbox_comments: false")) {
+                shouldPost = false;
+              }
+            }
+            
+            if (shouldPost) {
+              let md = "## 🛡️ Security Sandbox Report\n\n";
+              md += "The security sandbox detected potential vulnerabilities during its automated probes.\n\n";
+              md += "| Test | Status | Details |\n";
+              md += "|------|--------|---------|\n";
+              
+              for (const test of result.testResults) {
+                const statusIcon = test.passed ? "✅ Passed" : "❌ Failed";
+                let details = test.error || test.response || "No details";
+                if (details.length > 200) details = details.substring(0, 200) + "...";
+                details = details.replace(/\n/g, " ");
+                md += `| ${test.testName} | ${statusIcon} | ${details} |\n`;
+              }
+              
+              if (result.exploitPayload) {
+                md += `\n**Exploit Payload Executed:**\n\`\`\`\n${result.exploitPayload}\n\`\`\`\n`;
+              }
+              
+              await github.postPullRequestComment(owner, repo, pr.prNumber, md);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to post PR comment for security sandbox", err);
+      }
+    }
 
     return {
       sandboxId: sandbox.id,
