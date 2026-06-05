@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, Children, isValidElement } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -21,8 +21,10 @@ import {
   CardContent,
   Modal,
   Skeleton,
+  CopyToClipboard,
 } from "@/components/ui";
 import { ContributionReadinessCard } from "@/components/repository/ContributionReadinessCard";
+import { ChangeImpactPredictor } from "@/components/repository/ChangeImpactPredictor";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -455,7 +457,7 @@ export const FileStructure = ({ repository }: FileStructureProps) => {
           <CardDescription>*Click on a file for more info*</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="border border-border/50 rounded-lg p-4 bg-background/50 max-h-[600px] overflow-y-auto">
+          <div className="border border-border/50 rounded-lg p-4 bg-background/50 max-h-[600px] overflow-y-auto custom-scrollbar">
             <FileTreeNode
               node={fileTree}
               onFileSelect={handleFileSelect}
@@ -471,7 +473,7 @@ export const FileStructure = ({ repository }: FileStructureProps) => {
           onClick={() => setSelectedFile(null)}
         >
           <Card
-            className="glass max-w-[90vw] w-full lg:max-w-5xl h-[90vh] flex flex-col animate-fade-in-up relative"
+            className="glass max-w-[90vw] w-full lg:max-w-5xl h-[90vh] flex flex-col animate-fade-in-up relative overflow-y-auto custom-scrollbar"
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
               const target = e.target as HTMLElement;
@@ -756,10 +758,13 @@ export const FileStructure = ({ repository }: FileStructureProps) => {
                     <div className="text-sm">
                       <div className="bg-black/40 px-4 py-2 border-b border-border/50 flex justify-between items-center text-xs text-muted-foreground sticky top-0 z-10 backdrop-blur-sm">
                         <span>{selectedFile.path}</span>
-                        <span className="flex items-center gap-2 text-yellow-500">
-                          <Sparkles className="h-3 w-3" />
-                          Highlight text to explain with AI
-                        </span>
+                        <div className="flex items-center gap-4">
+                          <span className="flex items-center gap-2 text-yellow-500">
+                            <Sparkles className="h-3 w-3" />
+                            Highlight text to explain with AI
+                          </span>
+                          <CopyToClipboard text={fileContent}className="text-xs bg-white/5 hover:bg-white/10"/>
+                        </div>
                       </div>
                       <SyntaxHighlighter
                         language={
@@ -808,6 +813,54 @@ export const FileStructure = ({ repository }: FileStructureProps) => {
               </button>
             )}
 
+            {/* Change Impact Predictor */}
+            <div className="mb-8">
+              <ChangeImpactPredictor
+                repository={repository}
+                selectedFile={selectedFile}
+              />
+            </div>
+
+            {/* Change Summary */}
+            <div className="bg-gradient-to-r from-primary/10 to-transparent rounded-lg p-6 border border-white/10">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Clock className="h-5 w-5 text-primary" />
+                Summary
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground uppercase text-xs tracking-wide mb-1">
+                    Total Modifications
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {getFileCommitCount(selectedFile.path)}{" "}
+                    {getFileCommitCount(selectedFile.path) === 1
+                      ? "commit"
+                      : "commits"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground uppercase text-xs tracking-wide mb-1">
+                    Impact
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {(
+                      getFileChangeStats(selectedFile.path).additions +
+                      getFileChangeStats(selectedFile.path).deletions
+                    ).toLocaleString()}{" "}
+                    changes
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground uppercase text-xs tracking-wide mb-1">
+                    Current Size
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {selectedFile.lines?.toLocaleString() || 0} lines
+                  </p>
+                </div>
+              </div>
+            </div>
             <AIExplanationPanel
               isOpen={isAIPanelOpen}
               onClose={() => setIsAIPanelOpen(false)}
