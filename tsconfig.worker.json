@@ -15,6 +15,7 @@
     "scripts/analysisWorker.ts",
     "scripts/workerServer.ts",
     "scripts/cronWorker.ts",
+    "scripts/webhookWorker.ts",
     "lib/**/*.ts"
   ],
   "exclude": [
