@@ -111,6 +111,22 @@
     color: inherit;
   }
 
+  body::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  body::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  body::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.5);
+    border-radius: 5px;
+    border: 2px solid hsl(var(--background));
+  }
+  body::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.8);
+  }
+
   h1,
   h2,
   h3,
