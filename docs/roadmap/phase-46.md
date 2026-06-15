@@ -1,7 +1,7 @@
 # Phase 46: Platform Marketplace
 
 ## Goal
-Build GitVerse into a complete AI-powered Developer Operating System
+Build Platform Marketplace
 
 ## Features
 - Extensions
