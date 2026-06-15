@@ -1,7 +1,7 @@
 # Phase 44: Enterprise Knowledge Fabric
 
 ## Goal
-Build GitVerse into a complete AI-powered Developer Operating System
+Build Enterprise Knowledge Fabric
 
 ## Features
 - Engineering Wiki
