@@ -1,7 +1,7 @@
 # Phase 42: AI Architecture Assistant
 
 ## Goal
-Build GitVerse into a complete AI-powered Developer Operating System
+Build AI Architecture Assistant
 
 ## Features
 - System Design
