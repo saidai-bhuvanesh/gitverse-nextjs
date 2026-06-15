@@ -1,7 +1,7 @@
 # Phase 40: AI Code Review Platform
 
 ## Goal
-Build GitVerse into a complete AI-powered Developer Operating System
+Build AI Code Review Platform
 
 ## Features
 - Bug Detection
