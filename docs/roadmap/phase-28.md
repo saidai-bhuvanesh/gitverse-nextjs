@@ -1,7 +1,7 @@
 # Phase 28: AI Sprint Planning Engine
 
 ## Goal
-Build GitVerse into a complete AI-powered Developer Operating System
+Build AI Sprint Planning Engine
 
 ## Features
 - Task Estimation
