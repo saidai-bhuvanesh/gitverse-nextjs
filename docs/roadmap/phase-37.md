@@ -1,7 +1,7 @@
 # Phase 37: Developer Social Platform
 
 ## Goal
-Build GitVerse into a complete AI-powered Developer Operating System
+Build Developer Social Platform
 
 ## Features
 - Developer Profiles
