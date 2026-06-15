@@ -1,7 +1,7 @@
 # Phase 29: Knowledge Graph for Codebases
 
 ## Goal
-Build GitVerse into a complete AI-powered Developer Operating System
+Build Knowledge Graph for Codebases
 
 ## Features
 - Dependency Mapping
